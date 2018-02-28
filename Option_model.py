@@ -15,8 +15,9 @@ class OptionModel(object):
     def __init__(self, sess, n_features, n_options, n_actions, lr=0.001, e_greedy_min=0.05, e_decrement=0.01):
         self.sess = sess
         self.n_options = n_options
-        self.option_depth = len(n_options)
+        self.depth = len(n_options)
         self.epsilon = np.ones(len(n_options))
+        self.chosen_options = np.zeros(len(n_options), dtype=np.int32)
 
         self.s = tf.placeholder(tf.float32, [1, n_features], "state")
         self.a = tf.placeholder(tf.int32, None, "act")
@@ -54,43 +55,60 @@ class OptionModel(object):
         _, exp_v = self.sess.run([self.train_op, self.exp_v], feed_dict)
         return exp_v
 
-    def options_prob(self, Q):
-        options_prob = defaultdict(list)
-        for i in range(self.option_depth-1):
-            options_prob[i] = np.ones(self.n_options[i]) * self.epsilon[i] / self.n_options[i]
-            options_prob[Q[i] == np.argmax(Q[i])] += 1 - self.epsilon[i]
-        return options_prob
+    def eval_options_probs(self, Q):
+        options_probs = defaultdict(list)
+        for i in range(self.depth-1):
+            options_probs[i] = np.ones(self.n_options[i]) * self.epsilon[i] / self.n_options[i]
+            options_probs[i][np.argmax(Q[i])] += 1 - self.epsilon[i]
+        return  options_probs
+
+    # def choose_option(self, l, Q):
+    #     if np.random.uniform() > self.epsilon[l]:
+    #         option = np.argmax(Q[l])
+    #     else:
+    #         option = np.random.randint(0, self.n_options)
+    #     return option
 
     def choose_option(self, l, Q):
-        if np.random.uniform() > self.epsilon[l]:
-            option = np.argmax(Q[l])
-        else:
-            option = np.random.randint(0, self.n_options)
-        return option
+        options_probs = self.eval_options_probs(Q)
+        self.chosen_options[l] = np.random.choice(np.arange(options_probs[l].size), p=options_probs[l])
+        # return self.chosen_options[l]
 
     def choose_action(self, s):
         s = s[np.newaxis, :]
         probs = self.sess.run(self.acts_prob, {self.s: s})   # get probabilities for all actions
         return np.random.choice(np.arange(probs.shape[1]), p=probs.ravel())   # return a int
 
-    def reshape(self, Q):
-        hierarchical_q = defaultdict(list)
-        pointer = 0
-        for i in range(self.option_depth):
-            hierarchical_q[i] = Q[pointer: pointer+self.n_options[i]]
-            pointer += self.n_options[i]
-        return hierarchical_q
+    def eval_option_term(self, l, Q_):
+        options_probs_next = self.eval_options_probs(Q_)
+        options_term_prob_next = 1 - options_probs_next[l-1]
+        return options_term_prob_next[self.chosen_options[l-1]]
+
+
+
 
 
 class Critic(object):
     def __init__(self, sess, n_features, n_options, lr=0.01, gamma=0.99):
         self.sess = sess
         self.gamma = gamma
+        self.n_options = n_options
+        self.depth = len(n_options)
+        self.done = False
 
         self.s = tf.placeholder(tf.float32, [None, n_features], "state")
         self.v_ = tf.placeholder(tf.float32, [None, sum(n_options)], "v_next")
         self.o = tf.placeholder(tf.int32, [None, len(n_options)], "chosen_options")
         self.r = tf.placeholder(tf.float32, [None, len(n_options)], "reward")
+        self.b = tf.placeholder(tf.float32, [None, len(n_options)-1], "option_term")
+
+        options_slice_indexer = []
+        for i in range(len(n_options)):
+            begin_point = [0, i]
+            end_point = [tf.shape(self.o)[0], i + 1]
+            slice_o = tf.squeeze(tf.slice(self.o, begin_point, end_point))
+            options_slice_indexer.append(tf.stack([tf.range(tf.shape(self.o)[0], dtype=tf.int32), slice_o], axis=1))
+        self.options_indexer = tf.stack(options_slice_indexer, axis=1)
 
         with tf.variable_scope('Critic'):
             l1 = tf.layers.dense(
@@ -113,6 +131,8 @@ class Critic(object):
                 name='V'
             )
 
+            self.chosen_v = tf.gather_nd(self.v, self.options_indexer, "chosen_V")
+
             disconnected_l1 = tf.stop_gradient(l1)
 
             self.t = tf.layers.dense(
@@ -126,33 +146,51 @@ class Critic(object):
 
             self.disconnected_t = tf.stop_gradient(self.t, "disconnected_term_prob")
 
-        self.chosen_options = []
-        for i in range(len(n_options)):
-            begin_point = [0, i]
-            end_point = [len(n_options), i+1]
-            slice_o = tf.squeeze(tf.slice(self.o, begin_point, end_point))
-            self.chosen_options[i] = tf.stack([tf.range(tf.shape(self.o)[0], dtype=tf.int32), slice_o], axis=1)
+
 
 
         with tf.variable_scope('squared_TD_error'):
+            if self.done:
+                self.td_error = self.r - self.chosen_v
+            else:
+                self.td_error = self.r
+
+            self.loss = tf.reduce_sum(0.5 * tf.square(self.td_error))
+
             self.td_error = self.r + self.gamma * self.v_ - self.v
             self.loss = tf.square(self.td_error)    # TD_error = (r+gamma*V_next) - V_eval
         with tf.variable_scope('train'):
             self.train_op = tf.train.AdamOptimizer(lr).minimize(self.loss)
 
-    def learn(self, s, r, s_):
+    def learn(self, s, r, s_, beta, h_q):
         s, s_ = s[np.newaxis, :], s_[np.newaxis, :]
 
-        v_ = self.sess.run(self.v, {self.s: s_})
         td_error, _ = self.sess.run([self.td_error, self.train_op],
                                           {self.s: s, self.v_: v_, self.r: r})
         return td_error
 
-    def eval_q(self, s):
-        return self.sess.run(self.v, {self.s: s})
-
     def eval_t(self, s):
         return self.sess.run(self.disconnected_t, {self.s: s})
+
+    def eval_q(self, state, chosen_options=None):
+        state = state[np.newaxis, :]
+        Q_options = self.sess.run(self.v, {self.s: state})
+        hierarchical_q = self.reshape(Q_options)
+        if chosen_options is None:
+            return hierarchical_q
+        else:
+            chosen_options_q = []
+            for i in range(len(chosen_options)):
+                chosen_options_q.append(hierarchical_q[i][chosen_options[i]])
+            return chosen_options_q
+
+    def reshape(self, Q):
+        hierarchical_q = defaultdict(list)
+        pointer = 0
+        for i in range(self.depth):
+            hierarchical_q[i] = Q[pointer: pointer+self.n_options[i]]
+            pointer += self.n_options[i]
+        return hierarchical_q
 
 
 

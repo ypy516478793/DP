@@ -4,16 +4,18 @@ import tensorflow as tf
 
 def main():
     a = 5
-    for i in range(4):
-        c[i] = i + 1
-        print(c)
+    fun(a)
 
+def fun(a):
+    a = a + 1
+    print(a)
 
+main()
 
 # def train():
 #
 #     print("")
 #     print(a + 1)
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()

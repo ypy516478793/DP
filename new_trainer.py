@@ -9,8 +9,26 @@ def run_MDP(num_episodes, option_depth, env, option_controller, critic):
         state = env.reset()
         done = False
         while not done:
+            option_terminate = [False] * option_depth
             layer = 0
-            option_0 = critic.chosen_options[0]
+            hierarchical_Q = critic.eval_q(state)
+            # option_0 = option_controller.choose_option(l=layer, Q=hierarchical_Q)
+            option_controller.choose_option(layer, hierarchical_Q)
+
+            while not option_terminate[layer]:
+                layer = 1
+                hierarchical_Q = critic.eval_q(state)
+                option_controller.choose_option(layer, hierarchical_Q)
+
+                while not option_terminate[layer]:
+                    action = option_controller.choose_action(state)
+                    state_next, reward, done = env.step(action)
+                    critic.done = done
+                    hierarchical_Q_next = critic.eval_q(state_next)
+                    chosen_option_term_prob_next = option_controller.eval_option_term(layer, hierarchical_Q_next)
+                    td_error = critic.learn(state, reward, state_next, hierarchical_Q_next)
+
+
 
 
 def train(args):
