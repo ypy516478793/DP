@@ -17,12 +17,12 @@ import pandas as pd
 from MDP_env import MDP_env
 from collections import defaultdict
 
-np.random.seed(2)
-tf.set_random_seed(2)  # reproducible
+# np.random.seed(2)
+# tf.set_random_seed(2)  # reproducible
 
 # Superparameters
 OUTPUT_GRAPH = False
-MAX_EPISODE = 3000
+MAX_EPISODE = 10000
 DISPLAY_REWARD_THRESHOLD = 200  # renders environment if total episode reward is greater then this threshold
 MAX_EP_STEPS = 1000  # maximum time step in one episode
 RENDER = False  # rendering wastes time
@@ -75,7 +75,7 @@ class Actor(object):
 
         with tf.variable_scope('exp_v'):
             log_prob = tf.log(self.acts_prob[0, self.a])
-            self.exp_v = tf.reduce_mean(log_prob * self.td_error)  # advantage (TD_error) guided loss
+            self.exp_v = tf.reduce_mean(log_prob * self.td_error[-1])  # advantage (TD_error) guided loss
 
         with tf.variable_scope('train'):
             self.train_op = tf.train.AdamOptimizer(lr).minimize(-self.exp_v)  # minimize(-exp_v) = maximize(exp_v)
@@ -194,10 +194,15 @@ class Critic(object):
 
 
 def plot_figures():
+    # plt.figure(1)
+    # plt.plot(range(i_episode+1), reward_list)
+    # plt.xlabel("i_episode")
+    # plt.ylabel("running_reward")
+
     plt.figure(1)
-    plt.plot(range(i_episode), reward_list)
+    plt.plot(range(i_episode+1), average_reward)
     plt.xlabel("i_episode")
-    plt.ylabel("running_reward")
+    plt.ylabel("average_reward")
 
 def output_q_tables():
     # all_state = np.arange(n_states).reshape((n_states, 1))
@@ -222,6 +227,7 @@ if OUTPUT_GRAPH:
     tf.summary.FileWriter("logs/", sess.graph)
 
 reward_list = []
+reward_history = []
 
 visits = np.zeros([N_O[0],N_O[1],N_A])
 
@@ -283,6 +289,8 @@ for i_episode in range(MAX_EPISODE):
 
     ep_rs_sum = sum(track_r)
 
+    reward_history.append(ep_rs_sum)
+
     if 'running_reward' not in globals():
         running_reward = ep_rs_sum
         reward_list.append(running_reward)
@@ -290,7 +298,11 @@ for i_episode in range(MAX_EPISODE):
         running_reward = running_reward * 0.95 + ep_rs_sum * 0.05
         reward_list.append(running_reward)
     # if running_reward > DISPLAY_REWARD_THRESHOLD: RENDER = True  # rendering
-    print("episode:", i_episode, "  reward:", int(running_reward), "  epsilon", actor.epsilon)
+    print("episode:", i_episode, "  reward: %.3f" % running_reward, "  epsilon", actor.epsilon)
+
+average_reward = np.zeros(MAX_EPISODE)
+for i in range(MAX_EPISODE):
+    average_reward[i] = np.sum(reward_history[:i+1]) / (i+1)
 
 print("")
 
