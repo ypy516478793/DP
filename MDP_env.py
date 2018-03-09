@@ -41,7 +41,7 @@ class MDP_env:
             else:
                 return self.state, 1.00/100.00, True
         else:
-            return self.state, -0.01, False
+            return self.state, -0.001, False
 
 def one_hot(state):
     state_vector = np.zeros(6)
