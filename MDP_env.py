@@ -19,13 +19,13 @@ class MDP_env:
         if self.current_state != 0:
             # If "right" selected
             if action == 1:
-                # if self.current_state < 5:  # if current_state == 5, do not change current_state
-                #     self.current_state += 1
-                if random.random() < 0.5:
-                    if self.current_state < 5:  # if current_state == 5, do not change current_state
-                        self.current_state += 1
-                else:
-                    self.current_state -= 1
+                if self.current_state < 5:  # if current_state == 5, do not change current_state
+                    self.current_state += 1
+                # if random.random() < 0.5:
+                #     if self.current_state < 5:  # if current_state == 5, do not change current_state
+                #         self.current_state += 1
+                # else:
+                #     self.current_state -= 1
             # If "left" selected
             if action == 0:
                 self.current_state -= 1
@@ -41,7 +41,7 @@ class MDP_env:
             else:
                 return self.state, 1.00/100.00, True
         else:
-            return self.state, -0.001, False
+            return self.state, -0.000, False
 
 def one_hot(state):
     state_vector = np.zeros(6)

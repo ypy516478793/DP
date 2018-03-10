@@ -336,6 +336,7 @@ for i_episode in range(MAX_EPISODE):
                 actor.learn(new_s, a, td_error)  # true_gradient = grad[logPi(s,a) * td_error]
 
                 s = s_
+                s_0 = np.hstack([s, one_hot_0(actor.chosen_options[0])])
                 t += 1
 
                 if np.random.uniform() < beta2:

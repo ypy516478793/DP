@@ -27,7 +27,7 @@ DISPLAY_REWARD_THRESHOLD = 200  # renders environment if total episode reward is
 MAX_EP_STEPS = 1000  # maximum time step in one episode
 RENDER = False  # rendering wastes time
 GAMMA = 0.9  # reward discount in TD error
-LR_A = 0.001  # learning rate for actor
+LR_A = 0.0001  # learning rate for actor
 LR_C = 0.01  # learning rate for critic
 
 # env = gym.make('CartPole-v0')
@@ -39,7 +39,7 @@ env = MDP_env()
 # N_A = env.action_space.n
 N_F = 6
 N_A = 2
-N_O = (2, 4)
+N_O = (1, 4)
 
 
 def one_hot_0(option):
@@ -124,7 +124,7 @@ class Actor(object):
             if l == 0:
                 self.epsilon[l] = self.epsilon[l] - 0.0001
             elif l == 1:
-                self.epsilon[l] = self.epsilon[l] - 0.0005
+                self.epsilon[l] = self.epsilon[l] - 0.0001
 
 
 class Critic(object):
@@ -411,6 +411,7 @@ for i_episode in range(MAX_EPISODE):
                 actor.learn(new_s, a, td_error)  # true_gradient = grad[logPi(s,a) * td_error]
 
                 s = s_
+                s_0 = str([np.argmax(s), actor.chosen_options[0]])
                 t += 1
 
                 if np.random.uniform() < beta2:
