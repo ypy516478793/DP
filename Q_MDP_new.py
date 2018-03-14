@@ -14,7 +14,8 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import pandas as pd
-from MDP_env import MDP_env
+# from MDP_env import MDP_env
+from new_MDP_env import MDP_env
 from collections import defaultdict
 
 np.random.seed(2)
@@ -37,9 +38,9 @@ env = MDP_env()
 
 # N_F = env.observation_space.shape[0]
 # N_A = env.action_space.n
-N_F = 6
+N_F = 12
 N_A = 2
-N_O = (1, 4)
+N_O = (1, 2)
 
 
 def one_hot_0(option):
@@ -60,12 +61,15 @@ class Actor(object):
         self.n_options = n_options
         self.chosen_options = np.zeros(len(n_options), dtype=np.int32)
         self.new_features = n_features + n_options[-1]
+        self.new_features_0 = n_features + n_options[0]
 
         self.s = tf.placeholder(tf.float32, [None, self.new_features], "state")
+        self.s_0 = tf.placeholder(tf.float32, [None, self.new_features_0], "state_option_0")
         # self.s = tf.placeholder(tf.float32, [1, n_features], "state")
 
         self.a = tf.placeholder(tf.int32, None, "act")
         self.td_error = tf.placeholder(tf.float32, None, "td_error")  # TD_error
+        self.td_term = tf.placeholder(tf.float32, None, "term_error")
 
         with tf.variable_scope('Actor'):
             l1 = tf.layers.dense(
@@ -86,17 +90,39 @@ class Actor(object):
                 name='acts_prob'
             )
 
+        with tf.variable_scope('term_fun'):
+            l = tf.layers.dense(
+                inputs=self.s_0,
+                units=40,  # number of hidden units
+                activation=tf.nn.relu,
+                kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+                bias_initializer=tf.constant_initializer(0.1),  # biases
+                name='l'
+            )
+
+        self.beta = tf.layers.dense(
+            inputs=l,
+            units=n_options[-1],  # output units
+            activation=None,
+            kernel_initializer=tf.random_normal_initializer(0., .1),  # weights
+            bias_initializer=tf.constant_initializer(0.1),  # biases
+            name='Term_prob'
+        )
+
         with tf.variable_scope('exp_v'):
             log_prob = tf.log(self.acts_prob[0, self.a])
             self.exp_v = tf.reduce_mean(log_prob * self.td_error)  # advantage (TD_error) guided loss
+            log_term = tf.log(self.beta[0, self.chosen_options[1]])
+            self.exp_t = tf.reduce_mean(log_term * self.td_term)
 
         with tf.variable_scope('train_actor'):
             self.train_op = tf.train.AdamOptimizer(lr).minimize(-self.exp_v)  # minimize(-exp_v) = maximize(exp_v)
+            self.train_term_op = tf.train.AdamOptimizer(lr).minimize((self.exp_t))
 
-    def learn(self, s, a, td):
-        s = s[np.newaxis, :]
-        feed_dict = {self.s: s, self.a: a, self.td_error: td}
-        _, exp_v = self.sess.run([self.train_op, self.exp_v], feed_dict)
+    def learn(self, s, s_0, a, td, td_term):
+        s, s_0 = s[np.newaxis, :], s_0[np.newaxis, :]
+        feed_dict = {self.s: s, self.s_0: s_0, self.a: a, self.td_error: td, self.td_term: td_term}
+        _, __, exp_v = self.sess.run([self.train_op, self.train_term_op, self.exp_v], feed_dict)
         return exp_v
 
     def choose_action(self, s):
@@ -122,9 +148,9 @@ class Actor(object):
     def anneal(self, l):
         if self.epsilon[l] > 0.1:
             if l == 0:
-                self.epsilon[l] = self.epsilon[l] - 0.0001
+                self.epsilon[l] = self.epsilon[l] - 0.0005
             elif l == 1:
-                self.epsilon[l] = self.epsilon[l] - 0.0001
+                self.epsilon[l] = self.epsilon[l] - 0.0005
 
 
 class Critic(object):
@@ -382,6 +408,7 @@ for i_episode in range(MAX_EPISODE):
 
             while not option_done_1 and not done:
                 new_s = np.hstack([s, one_hot_1(actor.chosen_options[-1])])
+                new_s_0 = np.hstack([s, one_hot_0(actor.chosen_options[0])])
 
                 a = actor.choose_action(new_s)
 
@@ -397,7 +424,8 @@ for i_episode in range(MAX_EPISODE):
                 Q_1_next = critic.eval_q(s_0_, 1)
 
                 beta1 = actor.eval_option_term(0, Q_0_next)
-                beta2 = actor.eval_option_term(1, Q_1_next)
+                # beta2 = actor.eval_option_term(1, Q_1_next)
+                beta2 = actor.sess.run(actor.beta[0, actor.chosen_options[1]], {actor.s_0: new_s_0[np.newaxis, :]})
 
                 if done:
                     v_ = 0
@@ -405,20 +433,22 @@ for i_episode in range(MAX_EPISODE):
                     U = (1 - beta1) * Q_0_next[actor.chosen_options[0]] + beta1 * np.max(Q_0_next)
                     v_ = GAMMA * (1 - beta2) * Q_1_next[actor.chosen_options[1]] + GAMMA * beta2 * U
 
+                td_term = Q_1_next[actor.chosen_options[1]] - np.max(Q_1_next)
+
                 track_r.append(r)
 
                 td_error = critic.learn(np.argmax(s), s_0, r, v_, actor.chosen_options)  # gradient = grad[r + gamma * V(s_) - V(s)]
-                actor.learn(new_s, a, td_error)  # true_gradient = grad[logPi(s,a) * td_error]
+                actor.learn(new_s, new_s_0, a, td_error, td_term)  # true_gradient = grad[logPi(s,a) * td_error]
 
                 s = s_
                 s_0 = str([np.argmax(s), actor.chosen_options[0]])
                 t += 1
 
-                if np.random.uniform() < beta2:
+                if np.random.uniform() < beta2 or done:
                     option_done_1 = True
                     ends[N_O[0]+actor.chosen_options[1], np.argmax(s)] += 1
 
-            if np.random.uniform() < beta1:
+            if np.random.uniform() < beta1 or done:
                 option_done_0 = True
                 ends[actor.chosen_options[0], np.argmax(s)] += 1
     actor.anneal(1)
