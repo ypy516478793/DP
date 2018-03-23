@@ -15,12 +15,14 @@ import numpy as np
 from new_MDP_env import MDP_env
 from RL_brain import QLearningTable
 from matplotlib import pyplot as plt
+from collections import defaultdict
 
 
 def update():
     for episode in range(3000):
         # initial observation
         observation = env.reset()
+        episode_memories[episode].append(np.argmax(observation))
         r = 0
 
         while True:
@@ -38,11 +40,13 @@ def update():
             r += reward
 
             RL.store_transition(np.argmax(observation), action, reward, np.argmax(observation_))
+            episode_memories[episode].append(np.argmax(observation_))
 
             # RL learn from this transition
             RL.learn(np.argmax(observation), action, reward, np.argmax(observation_))
 
             # swap observation
+
             observation = observation_
 
             # break while loop when end of this episode
@@ -60,10 +64,12 @@ if __name__ == "__main__":
     n_features = 12
     reward_list = []
     RL = QLearningTable(n_features, actions=list(range(n_actions)))
+    episode_memories = defaultdict(list)
     update()
     av_reward = [np.mean(reward_list[0: i+1]) for i in range(len(reward_list))]
     plt.plot(np.arange((len(reward_list))), av_reward)
     plt.show()
+    np.set_printoptions(suppress=True)
     RL.q_table['a'] = RL.q_table.idxmax(axis=1)
     print(np.hstack([np.arange(12).reshape(12, 1), RL.q_table.sort_index(axis=0, ascending=True).values]))
     print("")

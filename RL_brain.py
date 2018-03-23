@@ -8,19 +8,22 @@ View more on my tutorial page: https://morvanzhou.github.io/tutorials/
 import numpy as np
 import pandas as pd
 
+np.random.seed(1234)
 
 class QLearningTable:
-    def __init__(self, actions, learning_rate=0.01, reward_decay=0.9, e_greedy=0.9):
+    def __init__(self, n_features, actions, learning_rate=0.01, reward_decay=0.9, e_greedy=1):
         self.actions = actions  # a list
         self.lr = learning_rate
         self.gamma = reward_decay
         self.epsilon = e_greedy
         self.q_table = pd.DataFrame(columns=self.actions, dtype=np.float64)
+        self.memory_size = 5000
+        self.memory = np.zeros((self.memory_size, 4))
 
     def choose_action(self, observation):
         self.check_state_exist(observation)
         # action selection
-        if np.random.uniform() < self.epsilon:
+        if np.random.uniform() > self.epsilon:
             # choose best action
             state_action = self.q_table.loc[observation, :]
             state_action = state_action.reindex(np.random.permutation(state_action.index))     # some actions have same value
@@ -38,6 +41,7 @@ class QLearningTable:
         else:
             q_target = r  # next state is terminal
         self.q_table.loc[s, a] += self.lr * (q_target - q_predict)  # update
+        # self.anneal()
 
     def check_state_exist(self, state):
         if state not in self.q_table.index:
@@ -49,3 +53,18 @@ class QLearningTable:
                     name=state,
                 )
             )
+
+    def store_transition(self, s, a, r, s_):
+        if not hasattr(self, 'memory_counter'):
+            self.memory_counter = 0
+        transition = np.hstack((s, [a, r], s_))
+        # replace the old memory with new memory
+        index = self.memory_counter % self.memory_size
+        self.memory[index, :] = transition
+        self.memory_counter += 1
+
+    def anneal(self):
+        if self.epsilon > 0.1:
+            self.epsilon -= (1-0.1)/3000
+            if self.epsilon < 0.1:
+                self.epsilon = 0.1
