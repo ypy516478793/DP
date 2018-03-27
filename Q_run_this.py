@@ -12,7 +12,8 @@ The RL is in RL_brain.py.
 View more on my tutorial page: https://morvanzhou.github.io/tutorials/
 """
 import numpy as np
-from new_MDP_env import MDP_env
+# from new_MDP_env import MDP_env
+from MDP_env import MDP_env
 from RL_brain import QLearningTable
 from matplotlib import pyplot as plt
 from collections import defaultdict
@@ -71,5 +72,34 @@ if __name__ == "__main__":
     plt.show()
     np.set_printoptions(suppress=True)
     RL.q_table['a'] = RL.q_table.idxmax(axis=1)
-    print(np.hstack([np.arange(12).reshape(12, 1), RL.q_table.sort_index(axis=0, ascending=True).values]))
+    print(np.hstack([np.arange(6).reshape(6, 1), RL.q_table.sort_index(axis=0, ascending=True).values]))
     print("")
+
+    n_state = 6
+
+    lr = np.zeros(n_state)
+    hr = np.zeros(n_state)
+    for i in range(3000):
+        if reward_list[i] < 0.5:
+            for element in set(episode_memories[i]):
+                lr[element] += 1
+        else:
+            for element in set(episode_memories[i]):
+                hr[element] += 1
+
+    lr2 = np.zeros([n_state, n_state])
+    hr2 = np.zeros([n_state, n_state])
+    for i in range(3000):
+        key = set()
+        if reward_list[i] < 0.5:
+            for i1 in range(len(episode_memories[i]) - 1):
+                for i2 in range(i1 + 1, len(episode_memories[i])):
+                    new_key = tuple([episode_memories[i][i1], episode_memories[i][i2]])
+                    if new_key not in key: lr2[new_key] += 1
+                    key.add(new_key)
+        else:
+            for i1 in range(len(episode_memories[i]) - 1):
+                for i2 in range(i1 + 1, len(episode_memories[i])):
+                    new_key = tuple([episode_memories[i][i1], episode_memories[i][i2]])
+                    if new_key not in key: hr2[new_key] += 1
+                    key.add(new_key)
