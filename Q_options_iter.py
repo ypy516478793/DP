@@ -281,20 +281,28 @@ for i_episode in range(MAX_EPISODE):
         while not option_done_0 and not done:
             option_done_1 = False
             Q_1 = critic.eval_q(s_0, 1)
-            actor.choose_option(1, Q_1)
+            if env.visited_six == True:
+                actor.chosen_options[1] = 1
+            else:
+                actor.chosen_options[1] = 0
+            # actor.choose_option(1, Q_1)
             starts[N_O[0] + actor.chosen_options[1], s_s] += 1
 
             while not option_done_1 and not done:
                 new_s_1 = np.hstack([s, opt2o_h(actor.chosen_options[1], 1)])
                 new_s_0 = np.hstack([s, opt2o_h(actor.chosen_options[0], 0)])
 
-                a = actor.choose_action(new_s_1)
+                # a = actor.choose_action(new_s_1)
+                if actor.chosen_options[1] == 1:
+                    a = 0
+                else:
+                    a = 1
 
                 s_, r, done = env.step(a)
 
                 visits[actor.chosen_options[0], actor.chosen_options[1], a] += 1
 
-                print("episode:", i_episode, "  state:", s_s, "  options", actor.chosen_options, "  action", a)
+                print("episode:", i_episode, "  state:", s_s, "  options", actor.chosen_options, "  action", a, "  next_state:", o_h2s(s_))
 
                 Q_0_next = critic.eval_q(o_h2s(s_), 0)
                 s_0_ = str([o_h2s(s_), actor.chosen_options[0]])
